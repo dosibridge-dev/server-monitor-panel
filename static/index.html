@@ -47,7 +47,7 @@
         </div>
 
         <div class="text-xs text-slate-500 mb-1" id="logMeta">Ready</div>
-        <pre id="logs" class="bg-slate-950 text-green-300 text-xs rounded p-2 h-[520px] overflow-auto whitespace-pre"></pre>
+        <div id="logs" class="bg-slate-950 text-green-300 text-xs rounded p-2 h-[520px] overflow-auto whitespace-pre font-mono"></div>
       </div>
     </div>
 
@@ -129,6 +129,18 @@ function renderContainers(list){
   if(selected) select.value=selected;
 }
 
+function escapeHtml(s){
+  return (s||'').replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;');
+}
+
+function renderPlain(lines){
+  logsEl.textContent='';
+  const pre=document.createElement('pre');
+  pre.className = wrap ? 'whitespace-pre-wrap m-0' : 'whitespace-pre m-0';
+  pre.textContent=lines.join('\n');
+  logsEl.appendChild(pre);
+}
+
 function applyFilters(){
   const q=(searchInput.value||'').toLowerCase();
   const level=levelFilter.value;
@@ -146,14 +158,16 @@ function applyFilters(){
       grouped[d].push(l);
     }
     const ordered=Object.keys(grouped).sort();
-    const out=[];
-    for(const d of ordered){
-      out.push(`\n========== ${d} ==========`);
-      out.push(...grouped[d]);
-    }
-    logsEl.textContent=out.join('\n').trim();
+    const html=ordered.map((d,i)=>{
+      const block=grouped[d].map(x=>escapeHtml(x)).join('\n');
+      return `<details ${i===ordered.length-1?'open':''} class="mb-2 border border-slate-800 rounded">
+        <summary class="cursor-pointer px-2 py-1 bg-slate-900 text-slate-200 font-semibold">${d} <span class='text-slate-400'>(${grouped[d].length} lines)</span></summary>
+        <pre class="m-0 p-2 ${wrap?'whitespace-pre-wrap':'whitespace-pre'}">${block}</pre>
+      </details>`;
+    }).join('');
+    logsEl.innerHTML = html || '<div class="text-slate-400">No logs match current filter.</div>';
   } else {
-    logsEl.textContent=lines.join('\n');
+    renderPlain(lines);
   }
 
   logMeta.textContent=`Lines: ${lines.length} | Raw: ${(rawLogs||'').split('\n').filter(Boolean).length} | Filter: ${level} | DateView: ${dateView?'On':'Off'}${q?` | Search: "${q}"`:''}`;
@@ -193,9 +207,8 @@ dateBtn.addEventListener('click',()=>{
 
 wrapBtn.addEventListener('click',()=>{
   wrap=!wrap;
-  logsEl.classList.toggle('whitespace-pre-wrap',wrap);
-  logsEl.classList.toggle('whitespace-pre',!wrap);
   wrapBtn.textContent=`Wrap: ${wrap?'On':'Off'}`;
+  applyFilters();
 });
 
 clearBtn.addEventListener('click',()=>{
