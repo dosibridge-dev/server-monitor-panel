@@ -147,10 +147,10 @@ def images():
 
 
 @app.get("/api/logs/{container_name}")
-def logs(container_name: str, tail: int = Query(200, ge=10, le=2000)):
+def logs(container_name: str, tail: int = Query(200, ge=10, le=3000)):
     try:
         c = client.containers.get(container_name)
-        data = c.logs(tail=tail).decode("utf-8", errors="ignore")
+        data = c.logs(tail=tail, timestamps=True).decode("utf-8", errors="ignore")
         return JSONResponse({"container": container_name, "logs": data})
     except Exception as e:
         return JSONResponse({"error": str(e)}, status_code=404)

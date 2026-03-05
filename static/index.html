@@ -39,6 +39,7 @@
               <option value="info">Info</option>
             </select>
             <button id="pauseBtn" class="border rounded px-2 py-1 text-xs">Pause</button>
+            <button id="dateBtn" class="border rounded px-2 py-1 text-xs bg-indigo-50 border-indigo-200">Date View: On</button>
             <button id="wrapBtn" class="border rounded px-2 py-1 text-xs">Wrap: Off</button>
             <button id="downloadBtn" class="border rounded px-2 py-1 text-xs">Download</button>
             <button id="clearBtn" class="border rounded px-2 py-1 text-xs">Clear View</button>
@@ -69,6 +70,7 @@ const searchInput=document.getElementById('searchInput');
 const levelFilter=document.getElementById('levelFilter');
 const pauseBtn=document.getElementById('pauseBtn');
 const wrapBtn=document.getElementById('wrapBtn');
+const dateBtn=document.getElementById('dateBtn');
 const downloadBtn=document.getElementById('downloadBtn');
 const clearBtn=document.getElementById('clearBtn');
 const logMeta=document.getElementById('logMeta');
@@ -77,6 +79,7 @@ let selected='';
 let fullscreen=false;
 let paused=false;
 let wrap=false;
+let dateView=true;
 let rawLogs='';
 
 async function doAction(name, action){
@@ -129,17 +132,31 @@ function renderContainers(list){
 function applyFilters(){
   const q=(searchInput.value||'').toLowerCase();
   const level=levelFilter.value;
-  let lines=(rawLogs||'').split('\n');
+  let lines=(rawLogs||'').split('\n').filter(Boolean);
 
-  if(level!=='all'){
-    lines=lines.filter(l=>l.toLowerCase().includes(level));
-  }
-  if(q){
-    lines=lines.filter(l=>l.toLowerCase().includes(q));
+  if(level!=='all') lines=lines.filter(l=>l.toLowerCase().includes(level));
+  if(q) lines=lines.filter(l=>l.toLowerCase().includes(q));
+
+  if(dateView){
+    const grouped={};
+    for(const l of lines){
+      const m=l.match(/^(\d{4}-\d{2}-\d{2})/);
+      const d=m?m[1]:'Unknown Date';
+      if(!grouped[d]) grouped[d]=[];
+      grouped[d].push(l);
+    }
+    const ordered=Object.keys(grouped).sort();
+    const out=[];
+    for(const d of ordered){
+      out.push(`\n========== ${d} ==========`);
+      out.push(...grouped[d]);
+    }
+    logsEl.textContent=out.join('\n').trim();
+  } else {
+    logsEl.textContent=lines.join('\n');
   }
 
-  logsEl.textContent=lines.join('\n');
-  logMeta.textContent=`Lines: ${lines.length} | Raw: ${(rawLogs||'').split('\n').length} | Filter: ${level}${q?` | Search: "${q}"`:''}`;
+  logMeta.textContent=`Lines: ${lines.length} | Raw: ${(rawLogs||'').split('\n').filter(Boolean).length} | Filter: ${level} | DateView: ${dateView?'On':'Off'}${q?` | Search: "${q}"`:''}`;
   logsEl.scrollTop=logsEl.scrollHeight;
 }
 
@@ -165,6 +182,13 @@ pauseBtn.addEventListener('click',()=>{
   paused=!paused;
   pauseBtn.textContent=paused?'Resume':'Pause';
   pauseBtn.className = paused ? 'border rounded px-2 py-1 text-xs bg-amber-100 border-amber-300' : 'border rounded px-2 py-1 text-xs';
+});
+
+dateBtn.addEventListener('click',()=>{
+  dateView=!dateView;
+  dateBtn.textContent=`Date View: ${dateView?'On':'Off'}`;
+  dateBtn.className = dateView ? 'border rounded px-2 py-1 text-xs bg-indigo-50 border-indigo-200' : 'border rounded px-2 py-1 text-xs';
+  applyFilters();
 });
 
 wrapBtn.addEventListener('click',()=>{
