@@ -21,14 +21,32 @@
       </div>
 
       <div class="bg-white rounded-xl border p-3" id="logsPanel">
-        <div class="flex items-center justify-between mb-2 gap-2">
+        <div class="flex flex-wrap items-center justify-between mb-2 gap-2">
           <h2 class="font-semibold">Live Logs</h2>
           <div class="flex items-center gap-2">
             <select id="containerSelect" class="border rounded px-2 py-1 text-sm"></select>
             <button id="fullscreenBtn" class="bg-slate-900 text-white rounded px-2 py-1 text-xs">Fullscreen</button>
           </div>
         </div>
-        <pre id="logs" class="bg-slate-950 text-green-300 text-xs rounded p-2 h-[520px] overflow-auto"></pre>
+
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-2 mb-2">
+          <input id="searchInput" placeholder="Search logs (text)..." class="border rounded px-2 py-1 text-sm" />
+          <div class="flex flex-wrap gap-2">
+            <select id="levelFilter" class="border rounded px-2 py-1 text-sm">
+              <option value="all">All levels</option>
+              <option value="error">Error</option>
+              <option value="warn">Warn</option>
+              <option value="info">Info</option>
+            </select>
+            <button id="pauseBtn" class="border rounded px-2 py-1 text-xs">Pause</button>
+            <button id="wrapBtn" class="border rounded px-2 py-1 text-xs">Wrap: Off</button>
+            <button id="downloadBtn" class="border rounded px-2 py-1 text-xs">Download</button>
+            <button id="clearBtn" class="border rounded px-2 py-1 text-xs">Clear View</button>
+          </div>
+        </div>
+
+        <div class="text-xs text-slate-500 mb-1" id="logMeta">Ready</div>
+        <pre id="logs" class="bg-slate-950 text-green-300 text-xs rounded p-2 h-[520px] overflow-auto whitespace-pre"></pre>
       </div>
     </div>
 
@@ -47,8 +65,19 @@ const logsEl=document.getElementById('logs');
 const imagesEl=document.getElementById('images');
 const logsPanel=document.getElementById('logsPanel');
 const fullscreenBtn=document.getElementById('fullscreenBtn');
+const searchInput=document.getElementById('searchInput');
+const levelFilter=document.getElementById('levelFilter');
+const pauseBtn=document.getElementById('pauseBtn');
+const wrapBtn=document.getElementById('wrapBtn');
+const downloadBtn=document.getElementById('downloadBtn');
+const clearBtn=document.getElementById('clearBtn');
+const logMeta=document.getElementById('logMeta');
+
 let selected='';
 let fullscreen=false;
+let paused=false;
+let wrap=false;
+let rawLogs='';
 
 async function doAction(name, action){
   if(!confirm(`${action.toUpperCase()} ${name}?`)) return;
@@ -97,6 +126,23 @@ function renderContainers(list){
   if(selected) select.value=selected;
 }
 
+function applyFilters(){
+  const q=(searchInput.value||'').toLowerCase();
+  const level=levelFilter.value;
+  let lines=(rawLogs||'').split('\n');
+
+  if(level!=='all'){
+    lines=lines.filter(l=>l.toLowerCase().includes(level));
+  }
+  if(q){
+    lines=lines.filter(l=>l.toLowerCase().includes(q));
+  }
+
+  logsEl.textContent=lines.join('\n');
+  logMeta.textContent=`Lines: ${lines.length} | Raw: ${(rawLogs||'').split('\n').length} | Filter: ${level}${q?` | Search: "${q}"`:''}`;
+  logsEl.scrollTop=logsEl.scrollHeight;
+}
+
 async function refreshImages(){
   const r=await fetch('/api/images');
   const imgs=await r.json();
@@ -104,21 +150,51 @@ async function refreshImages(){
 }
 
 async function refreshLogs(){
-  if(!selected) return;
-  const r=await fetch('/api/logs/'+encodeURIComponent(selected)+'?tail=400');
+  if(paused || !selected) return;
+  const r=await fetch('/api/logs/'+encodeURIComponent(selected)+'?tail=500');
   const d=await r.json();
-  logsEl.textContent=d.logs||d.error||'';
-  logsEl.scrollTop=logsEl.scrollHeight;
+  rawLogs=d.logs||d.error||'';
+  applyFilters();
 }
 
 select.addEventListener('change',()=>{selected=select.value;refreshLogs();});
+searchInput.addEventListener('input',applyFilters);
+levelFilter.addEventListener('change',applyFilters);
+
+pauseBtn.addEventListener('click',()=>{
+  paused=!paused;
+  pauseBtn.textContent=paused?'Resume':'Pause';
+  pauseBtn.className = paused ? 'border rounded px-2 py-1 text-xs bg-amber-100 border-amber-300' : 'border rounded px-2 py-1 text-xs';
+});
+
+wrapBtn.addEventListener('click',()=>{
+  wrap=!wrap;
+  logsEl.classList.toggle('whitespace-pre-wrap',wrap);
+  logsEl.classList.toggle('whitespace-pre',!wrap);
+  wrapBtn.textContent=`Wrap: ${wrap?'On':'Off'}`;
+});
+
+clearBtn.addEventListener('click',()=>{
+  logsEl.textContent='';
+  rawLogs='';
+  logMeta.textContent='Cleared';
+});
+
+downloadBtn.addEventListener('click',()=>{
+  const blob=new Blob([logsEl.textContent||''],{type:'text/plain'});
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(blob);
+  a.download=`${selected||'container'}-logs.txt`;
+  a.click();
+  URL.revokeObjectURL(a.href);
+});
 
 fullscreenBtn.addEventListener('click', ()=>{
   fullscreen=!fullscreen;
   if(fullscreen){
     logsPanel.classList.add('fixed','inset-4','z-50','shadow-2xl');
     logsPanel.classList.remove('rounded-xl');
-    logsEl.style.height='calc(100vh - 130px)';
+    logsEl.style.height='calc(100vh - 210px)';
     fullscreenBtn.textContent='Exit Fullscreen';
   } else {
     logsPanel.classList.remove('fixed','inset-4','z-50','shadow-2xl');
