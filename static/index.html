@@ -14,18 +14,21 @@
 
     <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
       <div class="bg-white rounded-xl border p-3">
-        <h2 class="font-semibold mb-2">Containers</h2>
-        <div class="overflow-auto max-h-[420px]">
+        <h2 class="font-semibold mb-2">Containers (Realtime + Actions)</h2>
+        <div class="overflow-auto max-h-[520px]">
           <table class="w-full text-sm" id="containersTable"></table>
         </div>
       </div>
 
-      <div class="bg-white rounded-xl border p-3">
-        <div class="flex items-center justify-between mb-2">
+      <div class="bg-white rounded-xl border p-3" id="logsPanel">
+        <div class="flex items-center justify-between mb-2 gap-2">
           <h2 class="font-semibold">Live Logs</h2>
-          <select id="containerSelect" class="border rounded px-2 py-1 text-sm"></select>
+          <div class="flex items-center gap-2">
+            <select id="containerSelect" class="border rounded px-2 py-1 text-sm"></select>
+            <button id="fullscreenBtn" class="bg-slate-900 text-white rounded px-2 py-1 text-xs">Fullscreen</button>
+          </div>
         </div>
-        <pre id="logs" class="bg-slate-950 text-green-300 text-xs rounded p-2 h-[420px] overflow-auto"></pre>
+        <pre id="logs" class="bg-slate-950 text-green-300 text-xs rounded p-2 h-[520px] overflow-auto"></pre>
       </div>
     </div>
 
@@ -42,7 +45,19 @@ const containersTable=document.getElementById('containersTable');
 const select=document.getElementById('containerSelect');
 const logsEl=document.getElementById('logs');
 const imagesEl=document.getElementById('images');
+const logsPanel=document.getElementById('logsPanel');
+const fullscreenBtn=document.getElementById('fullscreenBtn');
 let selected='';
+let fullscreen=false;
+
+async function doAction(name, action){
+  if(!confirm(`${action.toUpperCase()} ${name}?`)) return;
+  const r=await fetch(`/api/container/${encodeURIComponent(name)}/action`, {
+    method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({action})
+  });
+  const d=await r.json();
+  if(!r.ok){ alert(d.error||'Action failed'); return; }
+}
 
 function renderCards(s){
   const m=s.server.memory,d=s.server.disk;
@@ -59,9 +74,22 @@ function renderCards(s){
 }
 
 function renderContainers(list){
-  containersTable.innerHTML=`<thead><tr class='text-left border-b'><th>Name</th><th>Status</th><th>Health</th><th>Image</th></tr></thead><tbody></tbody>`;
-  const rows=list.map(c=>`<tr class='border-b'><td class='py-1'>${c.name}</td><td>${c.status}</td><td>${c.health||'-'}</td><td class='text-xs text-slate-500'>${c.image}</td></tr>`).join('');
-  containersTable.innerHTML=`<thead><tr class='text-left border-b'><th>Name</th><th>Status</th><th>Health</th><th>Image</th></tr></thead><tbody>${rows}</tbody>`;
+  const rows=list.map(c=>{
+    const health=(c.health||'-');
+    return `<tr class='border-b'>
+      <td class='py-1 pr-2 font-medium'>${c.name}</td>
+      <td>${c.status}</td>
+      <td>${health}</td>
+      <td class='text-xs text-slate-500 max-w-[220px] truncate'>${c.image}</td>
+      <td class='text-right whitespace-nowrap'>
+        <button class='text-xs px-2 py-1 rounded border mr-1' onclick="doAction('${c.name}','start')">Start</button>
+        <button class='text-xs px-2 py-1 rounded border mr-1' onclick="doAction('${c.name}','stop')">Stop</button>
+        <button class='text-xs px-2 py-1 rounded bg-slate-900 text-white' onclick="doAction('${c.name}','restart')">Restart</button>
+      </td>
+    </tr>`;
+  }).join('');
+
+  containersTable.innerHTML=`<thead><tr class='text-left border-b'><th>Name</th><th>Status</th><th>Health</th><th>Image</th><th class='text-right'>Action</th></tr></thead><tbody>${rows}</tbody>`;
 
   const opts=list.map(c=>`<option value='${c.name}'>${c.name}</option>`).join('');
   select.innerHTML=opts;
@@ -72,18 +100,33 @@ function renderContainers(list){
 async function refreshImages(){
   const r=await fetch('/api/images');
   const imgs=await r.json();
-  imagesEl.innerHTML = `<div class='text-slate-500 mb-2'>Total images: ${imgs.length}</div>` + imgs.slice(0,100).map(i=>`<div class='py-1 border-b text-xs'><b>${i.tags[0]||i.id}</b> · ${fmtBytes(i.size)}</div>`).join('');
+  imagesEl.innerHTML = `<div class='text-slate-500 mb-2'>Total images: ${imgs.length}</div>` + imgs.slice(0,150).map(i=>`<div class='py-1 border-b text-xs'><b>${i.tags[0]||i.id}</b> · ${fmtBytes(i.size)}</div>`).join('');
 }
 
 async function refreshLogs(){
   if(!selected) return;
-  const r=await fetch('/api/logs/'+encodeURIComponent(selected)+'?tail=250');
+  const r=await fetch('/api/logs/'+encodeURIComponent(selected)+'?tail=400');
   const d=await r.json();
   logsEl.textContent=d.logs||d.error||'';
   logsEl.scrollTop=logsEl.scrollHeight;
 }
 
 select.addEventListener('change',()=>{selected=select.value;refreshLogs();});
+
+fullscreenBtn.addEventListener('click', ()=>{
+  fullscreen=!fullscreen;
+  if(fullscreen){
+    logsPanel.classList.add('fixed','inset-4','z-50','shadow-2xl');
+    logsPanel.classList.remove('rounded-xl');
+    logsEl.style.height='calc(100vh - 130px)';
+    fullscreenBtn.textContent='Exit Fullscreen';
+  } else {
+    logsPanel.classList.remove('fixed','inset-4','z-50','shadow-2xl');
+    logsPanel.classList.add('rounded-xl');
+    logsEl.style.height='520px';
+    fullscreenBtn.textContent='Fullscreen';
+  }
+});
 
 const wsProto=location.protocol==='https:'?'wss':'ws';
 const ws=new WebSocket(`${wsProto}://${location.host}/ws`);

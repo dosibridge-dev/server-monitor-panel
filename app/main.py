@@ -1,4 +1,5 @@
 from fastapi import FastAPI, WebSocket, Query
+from pydantic import BaseModel
 import asyncio
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
@@ -179,6 +180,29 @@ def container_stats(container_name: str):
         }
     except Exception as e:
         return JSONResponse({"error": str(e)}, status_code=404)
+
+
+class ActionReq(BaseModel):
+    action: str
+
+
+@app.post("/api/container/{container_name}/action")
+def container_action(container_name: str, req: ActionReq):
+    try:
+        c = client.containers.get(container_name)
+        act = req.action.lower().strip()
+        if act == "start":
+            c.start()
+        elif act == "stop":
+            c.stop(timeout=10)
+        elif act == "restart":
+            c.restart(timeout=10)
+        else:
+            return JSONResponse({"error": "Invalid action. Use start|stop|restart"}, status_code=400)
+        c.reload()
+        return {"ok": True, "container": container_name, "action": act, "status": c.status}
+    except Exception as e:
+        return JSONResponse({"error": str(e)}, status_code=400)
 
 
 @app.websocket("/ws")
