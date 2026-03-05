@@ -1,0 +1,101 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>Server Monitor</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-slate-50 text-slate-800">
+  <div class="max-w-7xl mx-auto p-4 space-y-4">
+    <h1 class="text-2xl font-bold">🖥️ Advanced Server Monitoring Panel</h1>
+
+    <div class="grid grid-cols-2 md:grid-cols-4 gap-3" id="cards"></div>
+
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+      <div class="bg-white rounded-xl border p-3">
+        <h2 class="font-semibold mb-2">Containers</h2>
+        <div class="overflow-auto max-h-[420px]">
+          <table class="w-full text-sm" id="containersTable"></table>
+        </div>
+      </div>
+
+      <div class="bg-white rounded-xl border p-3">
+        <div class="flex items-center justify-between mb-2">
+          <h2 class="font-semibold">Live Logs</h2>
+          <select id="containerSelect" class="border rounded px-2 py-1 text-sm"></select>
+        </div>
+        <pre id="logs" class="bg-slate-950 text-green-300 text-xs rounded p-2 h-[420px] overflow-auto"></pre>
+      </div>
+    </div>
+
+    <div class="bg-white rounded-xl border p-3">
+      <h2 class="font-semibold mb-2">Docker Images</h2>
+      <div id="images" class="text-sm"></div>
+    </div>
+  </div>
+
+<script>
+const fmtBytes=(b)=>{if(!b)return'0 B';const u=['B','KB','MB','GB','TB'];let i=0;while(b>=1024&&i<u.length-1){b/=1024;i++;}return b.toFixed(1)+' '+u[i]}
+const cardsEl=document.getElementById('cards');
+const containersTable=document.getElementById('containersTable');
+const select=document.getElementById('containerSelect');
+const logsEl=document.getElementById('logs');
+const imagesEl=document.getElementById('images');
+let selected='';
+
+function renderCards(s){
+  const m=s.server.memory,d=s.server.disk;
+  const items=[
+    ['CPU %', s.server.cpu_pct+'%'],
+    ['Memory', `${fmtBytes(m.used)} / ${fmtBytes(m.total)} (${m.used_pct}%)`],
+    ['Disk', `${fmtBytes(d.used)} / ${fmtBytes(d.total)} (${d.used_pct}%)`],
+    ['Uptime', `${Math.floor(s.server.uptime_sec/3600)}h`],
+    ['Containers', `${s.docker.containers_running}/${s.docker.containers_total}`],
+    ['Images', s.docker.images_total],
+    ['Unhealthy', s.docker.unhealthy],
+  ];
+  cardsEl.innerHTML=items.map(i=>`<div class='bg-white rounded-xl border p-3'><div class='text-xs text-slate-500'>${i[0]}</div><div class='font-semibold'>${i[1]}</div></div>`).join('');
+}
+
+function renderContainers(list){
+  containersTable.innerHTML=`<thead><tr class='text-left border-b'><th>Name</th><th>Status</th><th>Health</th><th>Image</th></tr></thead><tbody></tbody>`;
+  const rows=list.map(c=>`<tr class='border-b'><td class='py-1'>${c.name}</td><td>${c.status}</td><td>${c.health||'-'}</td><td class='text-xs text-slate-500'>${c.image}</td></tr>`).join('');
+  containersTable.innerHTML=`<thead><tr class='text-left border-b'><th>Name</th><th>Status</th><th>Health</th><th>Image</th></tr></thead><tbody>${rows}</tbody>`;
+
+  const opts=list.map(c=>`<option value='${c.name}'>${c.name}</option>`).join('');
+  select.innerHTML=opts;
+  if(!selected && list.length){selected=list[0].name;select.value=selected;}
+  if(selected) select.value=selected;
+}
+
+async function refreshImages(){
+  const r=await fetch('/api/images');
+  const imgs=await r.json();
+  imagesEl.innerHTML = `<div class='text-slate-500 mb-2'>Total images: ${imgs.length}</div>` + imgs.slice(0,100).map(i=>`<div class='py-1 border-b text-xs'><b>${i.tags[0]||i.id}</b> · ${fmtBytes(i.size)}</div>`).join('');
+}
+
+async function refreshLogs(){
+  if(!selected) return;
+  const r=await fetch('/api/logs/'+encodeURIComponent(selected)+'?tail=250');
+  const d=await r.json();
+  logsEl.textContent=d.logs||d.error||'';
+  logsEl.scrollTop=logsEl.scrollHeight;
+}
+
+select.addEventListener('change',()=>{selected=select.value;refreshLogs();});
+
+const wsProto=location.protocol==='https:'?'wss':'ws';
+const ws=new WebSocket(`${wsProto}://${location.host}/ws`);
+ws.onmessage=(ev)=>{
+  const d=JSON.parse(ev.data);
+  renderCards(d.summary);
+  renderContainers(d.containers);
+};
+
+setInterval(refreshLogs,3000);
+refreshImages();
+setInterval(refreshImages,15000);
+</script>
+</body>
+</html>
